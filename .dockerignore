@@ -15,3 +15,11 @@ docs
 
 # Ignore all hidden files
 .*
+
+node_modules
+dist
+.git
+data
+rag
+Dockerfile.local
+EOF

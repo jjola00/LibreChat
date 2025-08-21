@@ -1,11 +1,11 @@
-version: "3.9"
+# docker-compose.yml  (top-level "version:" line removed)
 services:
   mongo:
     image: mongo:6
     restart: unless-stopped
     ports: ["27017:27017"]
     volumes:
-      - ./data/mongo:/data/db
+      - mongo_data:/data/db
     healthcheck:
       test: ["CMD-SHELL", "mongosh --quiet --eval \"db.adminCommand({ ping: 1 }).ok\" | grep 1"]
       interval: 10s
@@ -13,23 +13,25 @@ services:
       retries: 10
 
   librechat:
-    image: ghcr.io/danny-avila/librechat:latest
+    build:
+      context: .
+      dockerfile: Dockerfile.local
     restart: unless-stopped
     depends_on:
       mongo:
         condition: service_healthy
-    env_file: [.env]
+    env_file:
+      - .env.local
     ports: ["3080:3080"]
     volumes:
       - ./data/app:/var/lib/librechat
       - ./rag/docs:/var/lib/librechat/rag_docs:rw
       - ./librechat.yaml:/app/librechat.yaml:ro
-      - ./client/public/assets:/app/public/assets:ro
     healthcheck:
       test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:3080/ || exit 1"]
       interval: 15s
       timeout: 5s
       retries: 20
-networks:
-  default:
-    name: librechat-net
+
+volumes:
+  mongo_data:
