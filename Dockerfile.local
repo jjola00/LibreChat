@@ -1,0 +1,28 @@
+FROM node:20-alpine AS build
+WORKDIR /app
+# native deps for some npm modules
+RUN apk add --no-cache python3 make g++ git
+# install deps
+COPY package*.json ./
+COPY api/package.json ./api/package.json
+COPY client/package.json ./client/package.json
+COPY packages/data-provider/package.json ./packages/data-provider/package.json
+COPY packages/data-schemas/package.json ./packages/data-schemas/package.json
+COPY packages/api/package.json ./packages/api/package.json
+RUN npm ci --no-audit
+# bring in source
+COPY . .
+# build frontend (picks up your /client/public/assets/*)
+ENV NODE_OPTIONS="--max-old-space-size=2048"
+RUN npm run frontend && npm prune --production && npm cache clean --force
+
+# ---- runtime ----
+FROM node:20-alpine
+WORKDIR /app
+ENV NODE_ENV=production
+ENV HOST=0.0.0.0
+EXPOSE 3080
+# copy built app
+COPY --from=build /app /app
+# run the API (serves the built client too)
+CMD ["npm","run","backend"]
