@@ -20,6 +20,8 @@ services:
     depends_on:
       mongo:
         condition: service_healthy
+      ragapi:
+        condition: service_started
     env_file:
       - .env.local
     ports: ["3080:3080"]
