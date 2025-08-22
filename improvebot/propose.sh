@@ -1,25 +1,43 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Inputs:
-#   $1 = freeform "what to improve" (e.g., "add HR routing table")
-
 PROMPT_FILE="${PROMPT_FILE:-system_prompt/system_prompt.md}"
 GUARDRAILS_FILE="${GUARDRAILS_FILE:-improvebot/guardrails.md}"
 MODEL="${MODEL:-gpt-4o-mini}"
-OPENAI_API_KEY="${OPENAI_API_KEY:-<OPENAI_API_KEY>}"
+OPENAI_API_KEY="${OPENAI_API_KEY:-}"
 
 if [[ $# -lt 1 ]]; then
-  echo "Usage: $0 \"<improvement_request>\"" >&2
+  echo 'Usage: $0 "<improvement_request>"' >&2
   exit 1
 fi
-
 REQUEST="$1"
+
+[[ -f "$PROMPT_FILE" ]] || { echo "ERROR: Missing $PROMPT_FILE" >&2; exit 2; }
+[[ -f "$GUARDRAILS_FILE" ]] || { echo "ERROR: Missing $GUARDRAILS_FILE" >&2; exit 2; }
+
+# Offline/mock mode (no API call) for quick sanity check
+if [[ "${MOCK:-0}" == "1" ]]; then
+  l1="$(sed -n '1p' "$PROMPT_FILE")"
+  l2="$(sed -n '2p' "$PROMPT_FILE")"
+  l3="$(sed -n '3p' "$PROMPT_FILE")"
+  add_line='HR routing: If asked "who do I ask for annual leave?" answer: "Use the Personio platform."'
+  {
+    printf '%s\n' "--- a/$PROMPT_FILE"
+    printf '%s\n' "+++ b/$PROMPT_FILE"
+    printf '@@ -1,3 +1,4 @@\n'
+    printf ' %s\n' "$l1"
+    printf '+%s\n' "$add_line"
+    printf ' %s\n' "$l2"
+    printf ' %s\n' "$l3"
+  }
+  exit 0
+fi
+
+: "${OPENAI_API_KEY:?ERROR: Set OPENAI_API_KEY to a real key (export OPENAI_API_KEY='sk-...')}"
 
 read -r -d '' SYS <<'EOF'
 You are "Improvebot". Task: analyze the current system prompt and the user's requested improvement.
-Output ONLY a unified diff that patches system_prompt.md. No commentary before/after the diff.
-
+Output ONLY a unified diff that patches the target prompt file. No commentary before/after the diff.
 Rules:
 - Keep guardrails (tone, security, privacy) intact.
 - Prefer minimal edits to achieve the outcome.
@@ -40,13 +58,16 @@ $CURRENT_PROMPT
 - Requested improvement:
 $REQUEST
 
-Produce ONLY a valid unified diff patch from "a/system_prompt/system_prompt.md" to "b/system_prompt/system_prompt.md".
+- Target prompt file path (relative to repo root):
+$PROMPT_FILE
+
+Produce ONLY a valid unified diff patch from "a/$PROMPT_FILE" to "b/$PROMPT_FILE".
 EOF
 
-curl -sS https://api.openai.com/v1/chat/completions \
+resp="$(curl -sS https://api.openai.com/v1/chat/completions \
   -H "Authorization: Bearer $OPENAI_API_KEY" \
   -H "Content-Type: application/json" \
-  -d @- <<JSON | jq -r '.choices[0].message.content'
+  -d @- <<JSON
 {
   "model": "$MODEL",
   "messages": [
@@ -56,3 +77,13 @@ curl -sS https://api.openai.com/v1/chat/completions \
   "temperature": 0.2
 }
 JSON
+)"
+
+diff_out="$(printf '%s' "$resp" | jq -r '.choices[0].message.content // empty')"
+if [[ -z "$diff_out" || "$diff_out" == "null" ]]; then
+  echo "ERROR: No diff returned. Raw response:" >&2
+  printf '%s\n' "$resp" >&2
+  exit 3
+fi
+
+printf '%s\n' "$diff_out"
