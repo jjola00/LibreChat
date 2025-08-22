@@ -64,6 +64,10 @@ $PROMPT_FILE
 Produce ONLY a valid unified diff patch from "a/$PROMPT_FILE" to "b/$PROMPT_FILE".
 EOF
 
+# JSON-encode the message contents to ensure valid JSON
+SYS_JSON="$(printf '%s' "$SYS" | jq -Rs .)"
+USER_JSON="$(printf '%s' "$USER" | jq -Rs .)"
+
 resp="$(curl -sS https://api.openai.com/v1/chat/completions \
   -H "Authorization: Bearer $OPENAI_API_KEY" \
   -H "Content-Type: application/json" \
@@ -71,8 +75,8 @@ resp="$(curl -sS https://api.openai.com/v1/chat/completions \
 {
   "model": "$MODEL",
   "messages": [
-    {"role": "system", "content": $SYS},
-    {"role": "user", "content": $USER}
+    {"role": "system", "content": $SYS_JSON},
+    {"role": "user", "content": $USER_JSON}
   ],
   "temperature": 0.2
 }
