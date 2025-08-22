@@ -28,6 +28,36 @@ export default function useSubmitMessage() {
       if (!data) {
         return console.warn('No data provided to submitMessage');
       }
+
+      const text = data.text || '';
+      const improveMatch = text.trim().match(/^@improvebot\s+(.+)/i);
+      if (improveMatch) {
+        const request = improveMatch[1];
+        fetch('/api/improvebot', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ request, apply: true }),
+        })
+          .then(async (r) => {
+            const json = await r.json().catch(() => ({}));
+            if (!r.ok) {
+              throw new Error(json?.error || 'Improvebot failed');
+            }
+            // Minimal demo UX: alert result; could be replaced by toast
+            const msg = json?.ok ? 'Improvebot applied change and logged.' : 'Improvebot completed.';
+            // eslint-disable-next-line no-alert
+            window.alert(msg);
+          })
+          .catch((e) => {
+            // eslint-disable-next-line no-alert
+            window.alert(`Improvebot error: ${String(e.message || e)}`);
+          })
+          .finally(() => {
+            methods.reset();
+          });
+        return;
+      }
+
       const rootMessages = getMessages();
       const isLatestInRootMessages = rootMessages?.some(
         (message) => message.messageId === latestMessage?.messageId,
