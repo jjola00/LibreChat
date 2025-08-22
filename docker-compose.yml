@@ -29,6 +29,8 @@ services:
       - ./data/app:/var/lib/librechat
       - ./rag/docs:/var/lib/librechat/rag_docs:rw
       - ./librechat.yaml:/app/librechat.yaml:ro
+      - ./system_prompt:/app/system_prompt:rw
+      - ./improvebot:/app/improvebot:rw
     healthcheck:
       test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:3080/ || exit 1"]
       interval: 15s

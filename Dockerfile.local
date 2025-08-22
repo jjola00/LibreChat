@@ -13,7 +13,7 @@ RUN npm ci --no-audit
 # bring in source
 COPY . .
 # build frontend (picks up your /client/public/assets/*)
-ENV NODE_OPTIONS="--max-old-space-size=2048"
+ENV NODE_OPTIONS="--max-old-space-size=4096"
 RUN npm run frontend && npm prune --production && npm cache clean --force
 
 # ---- runtime ----
@@ -22,6 +22,8 @@ WORKDIR /app
 ENV NODE_ENV=production
 ENV HOST=0.0.0.0
 EXPOSE 3080
+# runtime tools required by improvebot scripts
+RUN apk add --no-cache bash python3 curl git
 # copy built app
 COPY --from=build /app /app
 # run the API (serves the built client too)
