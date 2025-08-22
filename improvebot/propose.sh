@@ -35,20 +35,19 @@ fi
 
 : "${OPENAI_API_KEY:?ERROR: Set OPENAI_API_KEY to a real key (export OPENAI_API_KEY='sk-...')}"
 
-read -r -d '' SYS <<'EOF'
-You are "Improvebot". Task: analyze the current system prompt and the user's requested improvement.
+# Define system prompt as a simple variable
+SYS='You are "Improvebot". Task: analyze the current system prompt and the user'\''s requested improvement.
 Output ONLY a unified diff that patches the target prompt file. No commentary before/after the diff.
 Rules:
 - Keep guardrails (tone, security, privacy) intact.
 - Prefer minimal edits to achieve the outcome.
-- Use valid unified diff format with ---/+++ headers and @@ hunks.
-EOF
+- Use valid unified diff format with ---/+++ headers and @@ hunks.'
 
 CURRENT_PROMPT="$(cat "$PROMPT_FILE")"
 GUARDRAILS="$(cat "$GUARDRAILS_FILE")"
 
-read -r -d '' USER <<EOF
-Inputs:
+# Build user prompt as a simple variable
+USER="Inputs:
 - Guardrails:
 $GUARDRAILS
 
@@ -61,14 +60,14 @@ $REQUEST
 - Target prompt file path (relative to repo root):
 $PROMPT_FILE
 
-Produce ONLY a valid unified diff patch from "a/$PROMPT_FILE" to "b/$PROMPT_FILE".
-EOF
+Produce ONLY a valid unified diff patch from \"a/$PROMPT_FILE\" to \"b/$PROMPT_FILE\"."
 
 # JSON-encode the message contents to ensure valid JSON
 SYS_JSON="$(printf '%s' "$SYS" | jq -Rs .)"
 USER_JSON="$(printf '%s' "$USER" | jq -Rs .)"
 
-resp="$(curl -sS https://api.openai.com/v1/chat/completions \
+# Add timeout to avoid hanging
+resp="$(curl -sS --max-time 60 https://api.openai.com/v1/chat/completions \
   -H "Authorization: Bearer $OPENAI_API_KEY" \
   -H "Content-Type: application/json" \
   -d @- <<JSON
@@ -82,6 +81,13 @@ resp="$(curl -sS https://api.openai.com/v1/chat/completions \
 }
 JSON
 )"
+
+# If the API returned an error object, surface it clearly
+api_error="$(printf '%s' "$resp" | jq -r '.error.message // empty' 2>/dev/null || true)"
+if [[ -n "${api_error:-}" ]]; then
+  echo "ERROR: API returned an error: $api_error" >&2
+  exit 3
+fi
 
 diff_out="$(printf '%s' "$resp" | jq -r '.choices[0].message.content // empty')"
 if [[ -z "$diff_out" || "$diff_out" == "null" ]]; then
