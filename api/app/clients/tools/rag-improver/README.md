@@ -53,13 +53,19 @@ A comprehensive, self-improving Retrieval-Augmented Generation (RAG) system that
 cd /path/to/LibreChat/api/app/clients/tools/rag-improver
 npm install
 
-# Set up ChromaDB (if not already running)
-docker run -p 8000:8000 chromadb/chroma
+# Set up ChromaDB (using port 8001 to avoid conflicts)
+docker run -d --name chroma-rag -p 8001:8000 chromadb/chroma
 ```
 
 ### 2. Configuration
 
-Copy and modify the configuration in `config.js`:
+The system automatically loads environment variables from LibreChat's root `.env` file. No additional configuration needed if you already have `OPENAI_API_KEY` set.
+
+To customize settings, modify `config.js`:
+- ChromaDB URL (default: `http://localhost:8001`)  
+- Confidence thresholds
+- Expert contact settings
+- Logging preferences
 
 ### 3. Initial Setup
 
