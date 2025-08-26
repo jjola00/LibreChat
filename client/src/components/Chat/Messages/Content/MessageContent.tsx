@@ -6,6 +6,8 @@ import type { TMessageContentProps, TDisplayProps } from '~/common';
 import Error from '~/components/Messages/Content/Error';
 import Thinking from '~/components/Artifacts/Thinking';
 import { useChatContext } from '~/Providers';
+import { ImprovebotMention, KnowledgeGapSuggestion } from '~/components/Chat/Improvebot';
+import { useImprovebot } from '~/hooks/Chat/useImprovebot';
 import MarkdownLite from './MarkdownLite';
 import EditMessage from './EditMessage';
 import { useLocalize } from '~/hooks';
@@ -70,7 +72,8 @@ export const ErrorMessage = ({
 };
 
 const DisplayMessage = ({ text, isCreatedByUser, message, showCursor }: TDisplayProps) => {
-  const { isSubmitting, latestMessage } = useChatContext();
+  const { isSubmitting, latestMessage, getMessages } = useChatContext();
+  const { detectKnowledgeGap } = useImprovebot();
   const enableUserMsgMarkdown = useRecoilValue(store.enableUserMsgMarkdown);
   const showCursorState = useMemo(
     () => showCursor === true && isSubmitting,
@@ -80,6 +83,36 @@ const DisplayMessage = ({ text, isCreatedByUser, message, showCursor }: TDisplay
     () => message.messageId === latestMessage?.messageId,
     [message.messageId, latestMessage?.messageId],
   );
+
+  // Check for @improvebot mentions
+  const improvebotMatch = useMemo(() => {
+    if (isCreatedByUser && text) {
+      const match = text.trim().match(/@improvebot\s+(.+)/i);
+      return match ? match[1].trim() : null;
+    }
+    return null;
+  }, [text, isCreatedByUser]);
+
+  // Detect knowledge gaps in assistant responses
+  const knowledgeGapDetection = useMemo(() => {
+    if (!isCreatedByUser && text && detectKnowledgeGap(text)) {
+      const messages = getMessages();
+      const currentIndex = messages?.findIndex(m => m.messageId === message.messageId);
+      
+      if (currentIndex !== undefined && currentIndex > 0) {
+        const previousMessage = messages[currentIndex - 1];
+        if (previousMessage?.isCreatedByUser && previousMessage?.text) {
+          return {
+            userQuestion: previousMessage.text,
+            assistantResponse: text,
+            conversationId: message.conversationId,
+            messageId: message.messageId,
+          };
+        }
+      }
+    }
+    return null;
+  }, [text, isCreatedByUser, detectKnowledgeGap, getMessages, message]);
 
   let content: React.ReactElement;
   if (!isCreatedByUser) {
@@ -102,6 +135,26 @@ const DisplayMessage = ({ text, isCreatedByUser, message, showCursor }: TDisplay
         )}
       >
         {content}
+        {improvebotMatch && (
+          <div className="mt-3">
+            <ImprovebotMention 
+              improvementRequest={improvebotMatch}
+              conversationContext={knowledgeGapDetection || undefined}
+              onComplete={() => {
+                // Optionally refresh or update the UI after improvement is applied
+                console.log('Improvebot improvement completed');
+              }}
+            />
+          </div>
+        )}
+        {knowledgeGapDetection && !improvebotMatch && (
+          <KnowledgeGapSuggestion
+            userQuestion={knowledgeGapDetection.userQuestion}
+            assistantResponse={knowledgeGapDetection.assistantResponse}
+            conversationId={knowledgeGapDetection.conversationId}
+            messageId={knowledgeGapDetection.messageId}
+          />
+        )}
       </div>
     </Container>
   );
