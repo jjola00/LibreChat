@@ -37,11 +37,20 @@ fi
 
 # Define system prompt as a simple variable
 SYS='You are "Improvebot". Task: analyze the current system prompt and the user'\''s requested improvement.
-Output ONLY a unified diff that patches the target prompt file. No commentary before/after the diff.
+Output ONLY a valid unified diff in the exact format below. NO explanatory text before or after.
+
+REQUIRED FORMAT:
+--- a/system_prompt/system_prompt.md
++++ b/system_prompt/system_prompt.md
+@@ -line,count +line,count @@
+ existing line
++new line to add
+ existing line
+
 Rules:
 - Keep guardrails (tone, security, privacy) intact.
 - Prefer minimal edits to achieve the outcome.
-- Use valid unified diff format with ---/+++ headers and @@ hunks.'
+- Output must be a valid git diff that can be applied with `git apply`.'
 
 CURRENT_PROMPT="$(cat "$PROMPT_FILE")"
 GUARDRAILS="$(cat "$GUARDRAILS_FILE")"
@@ -96,4 +105,26 @@ if [[ -z "$diff_out" || "$diff_out" == "null" ]]; then
   exit 3
 fi
 
-printf '%s\n' "$diff_out"
+# Clean up the diff output - extract only the valid unified diff part
+# Look for lines starting with --- and extract until we have a complete diff
+clean_diff=""
+in_diff=false
+while IFS= read -r line; do
+  if [[ "$line" =~ ^---[[:space:]]+a/ ]]; then
+    in_diff=true
+    clean_diff="$line"$'\n'
+  elif [[ "$in_diff" == true ]]; then
+    clean_diff+="$line"$'\n'
+    # Stop after we have a complete diff (when we see the next --- or end)
+    if [[ "$line" =~ ^---[[:space:]]+a/ ]] && [[ ${#clean_diff} -gt 50 ]]; then
+      break
+    fi
+  fi
+done <<< "$diff_out"
+
+# If we didn't find a proper diff, try to extract everything between --- and +++
+if [[ -z "$clean_diff" ]]; then
+  clean_diff="$diff_out"
+fi
+
+printf '%s' "$clean_diff"

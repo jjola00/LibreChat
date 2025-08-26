@@ -63,10 +63,30 @@ router.post('/apply', async (req, res) => {
   }
 
   try {
-    // Write diff to temp file
+    // Write diff to temp file with basic cleanup
     const fs = require('fs');
+    let cleanDiff = diff.trim();
+    
+    // Basic cleanup - remove any leading/trailing non-diff content
+    const lines = cleanDiff.split('\n');
+    let startIdx = 0;
+    let endIdx = lines.length;
+    
+    // Find start of actual diff
+    for (let i = 0; i < lines.length; i++) {
+      if (lines[i].startsWith('--- a/')) {
+        startIdx = i;
+        break;
+      }
+    }
+    
+    // If we found a proper diff start, use it
+    if (startIdx > 0) {
+      cleanDiff = lines.slice(startIdx).join('\n');
+    }
+    
     const tmpFile = `/tmp/improvebot_${Date.now()}.diff`;
-    fs.writeFileSync(tmpFile, diff);
+    fs.writeFileSync(tmpFile, cleanDiff);
 
     const env = {
       ...process.env,
