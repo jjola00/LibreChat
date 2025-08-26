@@ -17,18 +17,15 @@ REQUEST="$1"
 
 # Offline/mock mode (no API call) for quick sanity check
 if [[ "${MOCK:-0}" == "1" ]]; then
-  l1="$(sed -n '1p' "$PROMPT_FILE")"
-  l2="$(sed -n '2p' "$PROMPT_FILE")"
-  l3="$(sed -n '3p' "$PROMPT_FILE")"
-  add_line='HR routing: If asked "who do I ask for annual leave?" answer: "Use the Personio platform."'
+  # Get the last line number for appending
+  LAST_LINE=$(wc -l < "$PROMPT_FILE")
+  IMPROVEMENT_TEXT="${1:-HR routing improvement}"
+  
   {
     printf '%s\n' "--- a/$PROMPT_FILE"
     printf '%s\n' "+++ b/$PROMPT_FILE"
-    printf '@@ -1,3 +1,4 @@\n'
-    printf ' %s\n' "$l1"
-    printf '+%s\n' "$add_line"
-    printf ' %s\n' "$l2"
-    printf ' %s\n' "$l3"
+    printf '@@ -%d,0 +%d,1 @@\n' "$LAST_LINE" "$((LAST_LINE + 1))"
+    printf '+%s\n' "$IMPROVEMENT_TEXT"
   }
   exit 0
 fi
@@ -38,6 +35,12 @@ fi
 # Define system prompt as a simple variable
 SYS='You are "Improvebot". Task: analyze the current system prompt and the user'\''s requested improvement.
 Output ONLY a valid unified diff in the exact format below. NO explanatory text before or after.
+
+CRITICAL REQUIREMENTS:
+1. Keep all lines under 80 characters to prevent line wrapping
+2. If a line is too long, break it naturally at word boundaries
+3. Use proper unified diff format that git can apply
+4. Make minimal, targeted changes only
 
 REQUIRED FORMAT:
 --- a/system_prompt/system_prompt.md
@@ -50,6 +53,7 @@ REQUIRED FORMAT:
 Rules:
 - Keep guardrails (tone, security, privacy) intact.
 - Prefer minimal edits to achieve the outcome.
+- NEVER break lines mid-word or mid-sentence in existing content.
 - Output must be a valid git diff that can be applied with `git apply`.'
 
 CURRENT_PROMPT="$(cat "$PROMPT_FILE")"

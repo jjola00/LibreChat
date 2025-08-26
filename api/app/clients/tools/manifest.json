@@ -192,5 +192,18 @@
         "description": "Provide your Flux API key from your user profile."
       }
     ]
+  },
+  {
+    "name": "Dogpatch Knowledge Base",
+    "pluginKey": "dogpatch_knowledge_base",
+    "description": "Access the intelligent company knowledge base with self-improving capabilities for policies, procedures, and documentation.",
+    "icon": "/assets/knowledge-base.svg",
+    "authConfig": [
+      {
+        "authField": "OPENAI_API_KEY",
+        "label": "OpenAI API Key",
+        "description": "Required for knowledge base search and gap detection (should already be configured in LibreChat)."
+      }
+    ]
   }
 ]
