@@ -46,6 +46,10 @@ export const useImprovebot = () => {
       message_id?: string;
     }
   ): Promise<string | null> => {
+    if (!token) {
+      showToast({ message: 'Please log in to use Improvebot', status: 'error' });
+      return null;
+    }
     if (!improvementRequest.trim()) {
       showToast({ message: 'Improvement request cannot be empty', status: 'error' });
       return null;
@@ -95,6 +99,10 @@ export const useImprovebot = () => {
     why?: string,
     impact?: string
   ): Promise<boolean> => {
+    if (!token) {
+      showToast({ message: 'Please log in to approve changes', status: 'error' });
+      return false;
+    }
     if (!diff.trim()) {
       showToast({ message: 'No diff to apply', status: 'error' });
       return false;
@@ -141,6 +149,10 @@ export const useImprovebot = () => {
   }, [token, user?.name, showToast]);
 
   const getSystemPrompt = useCallback(async (): Promise<string | null> => {
+    if (!token) {
+      showToast({ message: 'Please log in to view system prompt', status: 'error' });
+      return null;
+    }
     try {
       const response = await fetch('/api/improvebot/prompt', {
         method: 'GET',

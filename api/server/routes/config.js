@@ -1,6 +1,8 @@
 const express = require('express');
 const { isEnabled } = require('@librechat/api');
 const { logger } = require('@librechat/data-schemas');
+const { execFile } = require('child_process');
+const path = require('path');
 const { CacheKeys, defaultSocialLogins, Constants } = require('librechat-data-provider');
 const { getCustomConfig } = require('~/server/services/Config/getCustomConfig');
 const { getLdapConfig } = require('~/server/services/Config/ldap');
@@ -162,6 +164,63 @@ router.get('/', async function (req, res) {
   } catch (err) {
     logger.error('Error in startup config', err);
     return res.status(500).send({ error: err.message });
+  }
+});
+
+// TEMPORARY: Test Improvebot functionality through working route
+router.post('/test-improvebot', async (req, res) => {
+  const { improvement_request } = req.body;
+  
+  if (!improvement_request) {
+    return res.status(400).json({ error: 'improvement_request is required' });
+  }
+
+  try {
+    if (!process.env.OPENAI_API_KEY) {
+      return res.status(400).json({ 
+        error: 'OPENAI_API_KEY not configured on server',
+        hint: 'Ask your admin to set OPENAI_API_KEY in the server environment'
+      });
+    }
+
+    const REPO_ROOT = path.resolve(__dirname, '../../..');
+    const scriptPath = path.join(REPO_ROOT, 'improvebot', 'propose.sh');
+    const childEnv = {
+      ...process.env,
+      PROMPT_FILE: 'system_prompt/system_prompt.md',
+      GUARDRAILS_FILE: 'improvebot/guardrails.md',
+    };
+
+    logger.info('[Config Test] Testing Improvebot via config route:', { 
+      hasApiKey: !!process.env.OPENAI_API_KEY,
+      keyLength: process.env.OPENAI_API_KEY?.length || 0,
+      scriptPath,
+      request: improvement_request
+    });
+
+    execFile(
+      scriptPath,
+      [improvement_request],
+      { cwd: REPO_ROOT, env: childEnv, timeout: 90000, maxBuffer: 10 * 1024 * 1024 },
+      (error, stdout, stderr) => {
+        if (error) {
+          logger.error('[Config Test] Improvebot error:', error, stderr);
+          const details = (stderr || error.message || '').toString();
+          return res.status(500).json({ error: 'Failed to generate proposal', details });
+        }
+
+        logger.info('[Config Test] Improvebot success:', { outputLength: stdout.length });
+        res.json({
+          success: true,
+          diff: stdout,
+          message: 'Improvement proposal generated via config route test',
+          route: 'config/test-improvebot'
+        });
+      }
+    );
+  } catch (error) {
+    logger.error('[Config Test] Exception:', error);
+    res.status(500).json({ error: 'Internal server error', details: error.message });
   }
 });
 

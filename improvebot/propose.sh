@@ -75,9 +75,23 @@ $PROMPT_FILE
 
 Produce ONLY a valid unified diff patch from \"a/$PROMPT_FILE\" to \"b/$PROMPT_FILE\"."
 
-# JSON-encode the message contents to ensure valid JSON
-SYS_JSON="$(printf '%s' "$SYS" | jq -Rs .)"
-USER_JSON="$(printf '%s' "$USER" | jq -Rs .)"
+# JSON-encode the message contents without external deps (use Python stdlib)
+SYS_JSON="$(python3 - <<'PY'
+import json,sys
+print(json.dumps(sys.stdin.read()))
+PY
+<<EOF
+$SYS
+EOF
+)"
+USER_JSON="$(python3 - <<'PY'
+import json,sys
+print(json.dumps(sys.stdin.read()))
+PY
+<<EOF
+$USER
+EOF
+)"
 
 # Add timeout to avoid hanging
 resp="$(curl -sS --max-time 60 https://api.openai.com/v1/chat/completions \
@@ -95,14 +109,30 @@ resp="$(curl -sS --max-time 60 https://api.openai.com/v1/chat/completions \
 JSON
 )"
 
-# If the API returned an error object, surface it clearly
-api_error="$(printf '%s' "$resp" | jq -r '.error.message // empty' 2>/dev/null || true)"
+# If the API returned an error object, surface it clearly (Python stdlib json)
+api_error="$(python3 - <<'PY'
+import sys,json
+try:
+  data=json.loads(sys.stdin.read())
+  err=(data.get('error') or {}).get('message')
+  print(err or '')
+except Exception:
+  print('')
+PY
+<<<"$resp")"
 if [[ -n "${api_error:-}" ]]; then
   echo "ERROR: API returned an error: $api_error" >&2
   exit 3
 fi
 
-diff_out="$(printf '%s' "$resp" | jq -r '.choices[0].message.content // empty')"
+diff_out="$(python3 - <<'PY'
+import sys,json
+data=json.loads(sys.stdin.read())
+choice=data.get('choices',[{}])[0]
+msg=(choice.get('message') or {}).get('content')
+print(msg or '')
+PY
+<<<"$resp")"
 if [[ -z "$diff_out" || "$diff_out" == "null" ]]; then
   echo "ERROR: No diff returned. Raw response:" >&2
   printf '%s\n' "$resp" >&2

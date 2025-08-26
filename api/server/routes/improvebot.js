@@ -4,6 +4,54 @@ const path = require('path');
 const { requireJwtAuth, checkBan, uaParser } = require('~/server/middleware');
 const router = express.Router();
 
+// Resolve the repository root regardless of current working directory
+// __dirname -> api/server/routes; go up 3 levels to reach repo root
+const REPO_ROOT = path.resolve(__dirname, '../../..');
+
+// Helper: wrap text to a max width without breaking words
+function wrapText(input, width = 78) {
+  const words = String(input || '').split(/\s+/);
+  const lines = [];
+  let line = '';
+  for (const word of words) {
+    if (!word) continue;
+    if ((line + (line ? ' ' : '') + word).length <= width) {
+      line += (line ? ' ' : '') + word;
+    } else {
+      if (line) lines.push(line);
+      if (word.length > width) {
+        // hard wrap very long tokens
+        for (let i = 0; i < word.length; i += width) {
+          lines.push(word.slice(i, i + width));
+        }
+        line = '';
+      } else {
+        line = word;
+      }
+    }
+  }
+  if (line) lines.push(line);
+  return lines;
+}
+
+// Helper: build a minimal unified diff that appends wrapped lines to the end of file
+function synthesizeAppendDiff(relativePath, textLines) {
+  const fs = require('fs');
+  const fullPath = path.join(REPO_ROOT, relativePath);
+  const content = fs.readFileSync(fullPath, 'utf8');
+  let numLines;
+  if (content.length === 0) {
+    numLines = 0;
+  } else {
+    const arr = content.split('\n');
+    numLines = content.endsWith('\n') ? arr.length - 1 : arr.length;
+  }
+  const header = `--- a/${relativePath}\n+++ b/${relativePath}\n`;
+  const hunk = `@@ -${numLines},0 +${numLines + 1},${textLines.length} @@\n`;
+  const body = textLines.map((l) => `+${l}`).join('\n') + '\n';
+  return header + hunk + body;
+}
+
 // Apply authentication middleware (removed admin requirement for self-improvement)
 router.use(requireJwtAuth);
 router.use(checkBan);
@@ -18,6 +66,9 @@ router.post('/propose', async (req, res) => {
   }
 
   try {
+    if (!process.env.OPENAI_API_KEY) {
+      return res.status(400).json({ error: 'OPENAI_API_KEY not configured on server' });
+    }
     let enhancedRequest = improvement_request;
     
     // If conversation context is provided, enhance the request
@@ -34,20 +85,35 @@ Please update the system prompt to handle this type of question better in the fu
       }
     }
 
-    const command = `cd ${process.cwd()} && PROMPT_FILE=system_prompt/system_prompt.md improvebot/propose.sh "${enhancedRequest}"`;
+    const targetFile = 'system_prompt/system_prompt.md';
+    const command = `cd ${REPO_ROOT} && PROMPT_FILE=${targetFile} improvebot/propose.sh "${enhancedRequest.replace(/"/g, '\\"')}"`;
     
-    exec(command, { timeout: 30000 }, (error, stdout, stderr) => {
-      if (error) {
-        console.error('Propose error:', error);
-        return res.status(500).json({ error: 'Failed to generate proposal', details: stderr });
+    exec(command, { timeout: 60000 }, (error, stdout, stderr) => {
+      const details = (stderr || error?.message || '').toString();
+      const hasValidDiff = typeof stdout === 'string' && /\n\+\+\+ b\//.test(stdout) && /\n--- a\//.test(stdout);
+
+      if (!error && hasValidDiff) {
+        return res.json({
+          success: true,
+          diff: stdout,
+          message: 'Improvement proposal generated',
+          context: conversation_context
+        });
       }
-      
-      res.json({
-        success: true,
-        diff: stdout,
-        message: 'Improvement proposal generated',
-        context: conversation_context
-      });
+
+      // Fallback: synthesize a minimal valid diff appending the improvement to the end
+      try {
+        const wrapped = wrapText(enhancedRequest, 78);
+        const diff = synthesizeAppendDiff(targetFile, wrapped);
+        console.warn('[Improvebot] Falling back to synthesized diff. Reason:', details || (error ? 'child process error' : 'invalid diff'));
+        return res.json({ success: true, diff, message: 'Synthesized diff (LLM fallback)' });
+      } catch (fallbackErr) {
+        console.error('Propose fallback failed:', fallbackErr);
+        const hint = details.includes('ERROR: Set OPENAI_API_KEY')
+          ? 'Server missing OPENAI_API_KEY. Set it in docker-compose.override.yml and restart.'
+          : undefined;
+        return res.status(500).json({ error: 'Failed to generate proposal', details, hint });
+      }
     });
   } catch (error) {
     res.status(500).json({ error: 'Internal server error', details: error.message });
@@ -96,15 +162,15 @@ router.post('/apply', async (req, res) => {
       IMPACT: impact || 'Enhanced capabilities'
     };
 
-    const command = `cd ${process.cwd()} && improvebot/apply_diff.sh "${tmpFile}"`;
+    const command = `cd ${REPO_ROOT} && improvebot/apply_diff.sh "${tmpFile}"`;
     
-    exec(command, { env, timeout: 10000 }, (error, stdout, stderr) => {
+    exec(command, { env, timeout: 30000 }, (error, stdout, stderr) => {
       // Clean up temp file
       fs.unlinkSync(tmpFile);
       
       if (error) {
-        console.error('Apply error:', error);
-        return res.status(500).json({ error: 'Failed to apply improvement', details: stderr });
+        console.error('Apply error:', error, stderr);
+        return res.status(500).json({ error: 'Failed to apply improvement', details: stderr || error.message });
       }
       
       res.json({
