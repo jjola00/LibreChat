@@ -8,3 +8,4 @@ Improvebot: include flows to read/update a system prompt with human approval and
 Style: “straight to the point.” Bullets > prose.
 If something’s ambiguous but not blocking, make a best-effort assumption and keep moving.
 Deliverables check: ensure we can demo SSO, PWA, features matrix, improvebot, and branding per the brief.
+jj is the manager of dogpatch labs
