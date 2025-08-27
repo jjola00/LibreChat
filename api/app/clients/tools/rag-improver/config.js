@@ -89,6 +89,27 @@ const config = {
     processingTimeout: 5 * 60 * 1000, // 5 minutes
   },
 
+  // Google Drive Integration
+  googleDrive: {
+    enabled: !!(process.env.GOOGLE_DRIVE_CREDENTIALS_PATH || process.env.GOOGLE_APPLICATION_CREDENTIALS),
+    credentialsPath: process.env.GOOGLE_DRIVE_CREDENTIALS_PATH || process.env.GOOGLE_APPLICATION_CREDENTIALS,
+    targetFolderName: process.env.TEST_CONTEXT_FOLDER_NAME,
+    targetFolderId: process.env.TEST_CONTEXT_FOLDER_ID, // Direct folder ID if available
+    scopes: ['https://www.googleapis.com/auth/drive.readonly', 'https://www.googleapis.com/auth/documents.readonly', 'https://www.googleapis.com/auth/spreadsheets.readonly', 'https://www.googleapis.com/auth/presentations.readonly'],
+    cacheFile: path.join(__dirname, 'data', 'drive_cache.json'),
+    refreshIntervalHours: 24, // Refresh Drive content every 24 hours
+    supportedMimeTypes: [
+      'application/vnd.google-apps.document',     // Google Docs
+      'application/vnd.google-apps.spreadsheet', // Google Sheets
+      'application/vnd.google-apps.presentation', // Google Slides
+      'application/pdf',                          // PDF files
+      'text/plain',                              // Text files
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document', // DOCX
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', // XLSX
+      'application/vnd.openxmlformats-officedocument.presentationml.presentation', // PPTX
+    ],
+  },
+
   // Employee Directory (for contact identification)
   employeeDirectory: {
     enabled: true,
@@ -129,6 +150,17 @@ const validateConfig = () => {
 
   if (config.vectorDB.type === 'chroma' && !config.vectorDB.chromaUrl) {
     errors.push('Chroma URL is required when using Chroma as vector database');
+  }
+
+  // Validate Google Drive configuration if enabled
+  if (config.googleDrive.enabled) {
+    if (!config.googleDrive.credentialsPath) {
+      errors.push('Google Drive credentials path is required (set GOOGLE_DRIVE_CREDENTIALS_PATH or GOOGLE_APPLICATION_CREDENTIALS)');
+    }
+    
+    if (!config.googleDrive.targetFolderName && !config.googleDrive.targetFolderId) {
+      errors.push('Google Drive target folder name or ID is required (set TEST_CONTEXT_FOLDER_NAME or TEST_CONTEXT_FOLDER_ID)');
+    }
   }
 
   if (errors.length > 0) {

@@ -26,10 +26,10 @@ async function setup() {
     await ragEngine.initialize();
     console.log('✅ RAG engine initialized\n');
 
-    // Step 3: Load sample data
-    console.log('📚 Loading sample company data...');
-    await loadSampleData(ragEngine);
-    console.log('✅ Sample data loaded\n');
+    // Step 3: Load data from Google Drive
+    console.log('📚 Loading company data from Google Drive...');
+    await loadGoogleDriveData(ragEngine);
+    console.log('✅ Google Drive data loaded\n');
 
     // Step 4: Verify system
     console.log('🔍 Verifying system...');
@@ -44,10 +44,11 @@ async function setup() {
     console.log('🎉 Setup complete! The Self-Improving RAG System is ready to use.\n');
     
     console.log('📋 Next steps:');
-    console.log('1. Add your company documents to the knowledge base');
-    console.log('2. Configure employee directory (optional)');
-    console.log('3. Set up Slack/email notifications (optional)');
-    console.log('4. Start using the system in LibreChat\n');
+    console.log('1. Your Google Drive content is now loaded and ready to use');
+    console.log('2. Add more documents to the "Test Context" folder as needed');
+    console.log('3. Configure employee directory (optional)');
+    console.log('4. Set up Slack/email notifications (optional)');
+    console.log('5. Start using the system in LibreChat\n');
 
     await ragEngine.close();
     
@@ -78,175 +79,57 @@ async function createDirectories() {
 }
 
 /**
- * Load sample company data
+ * Load data from Google Drive "Test Context" folder
  */
-async function loadSampleData(ragEngine) {
-  const sampleDocs = [
-    {
-      id: 'sample-1',
-      content: `# Annual Leave Policy
+async function loadGoogleDriveData(ragEngine) {
+  try {
+    console.log('  📂 Connecting to Google Drive...');
+    
+    // Check if Google Drive is enabled
+    if (!config.googleDrive.enabled) {
+      console.log('  ⚠️  Google Drive integration is disabled. Enable it in config to load real data.');
+      return { documentsProcessed: 0 };
+    }
 
-## Overview
-Dogpatch Labs provides generous annual leave for all employees to maintain work-life balance.
+    // Validate credentials file exists
+    const fs = require('fs-extra');
+    if (!await fs.pathExists(config.googleDrive.credentialsPath)) {
+      throw new Error(`Google Drive credentials file not found: ${config.googleDrive.credentialsPath}`);
+    }
 
-## Entitlements
-- New employees: 20 days annual leave
-- After 2 years: 25 days annual leave
-- After 5 years: 30 days annual leave
-
-## How to Request Leave
-1. Submit request through Personio platform
-2. Get manager approval
-3. Update team calendar
-4. Notify HR team
-
-## Contact
-For questions about annual leave, contact:
-- HR Team: hr@dogpatchlabs.com
-- Personio platform: https://dogpatch.personio.com`,
-      source: 'sample_policy',
-      filename: 'annual_leave_policy.md',
-      content_type: 'policy',
-      metadata: {
-        title: 'Annual Leave Policy',
-        category: 'HR',
-        keywords: ['leave', 'vacation', 'holiday', 'time off', 'Personio'],
-        confidence_score: 1.0,
-      },
-    },
-    {
-      id: 'sample-2',
-      content: `# IT Support Guide
-
-## Getting Help
-For technical issues, contact our IT support team:
-
-## Contact Methods
-- Email: it@dogpatchlabs.com
-- Slack: #it-support
-- Phone: +353 1 555 0123 (emergency only)
-
-## Common Issues
-
-### WiFi Access
-- Guest WiFi: DogpatchGuest (password: Welcome2023)
-- Staff WiFi: DogpatchStaff (contact IT for password)
-
-### Password Reset
-1. Go to https://accounts.dogpatchlabs.com
-2. Click "Forgot Password"
-3. Follow email instructions
-
-### Software Installation
-All software requests must be approved by IT team. Submit requests via Slack #it-support.
-
-## Office Hours
-IT support is available:
-- Monday-Friday: 9:00 AM - 6:00 PM
-- Emergency support available 24/7`,
-      source: 'sample_guide',
-      filename: 'it_support_guide.md',
-      content_type: 'guide',
-      metadata: {
-        title: 'IT Support Guide',
-        category: 'IT',
-        keywords: ['IT', 'support', 'wifi', 'password', 'technical', 'computer'],
-        confidence_score: 1.0,
-      },
-    },
-    {
-      id: 'sample-3',
-      content: `# Office Facilities & Meeting Rooms
-
-## Meeting Room Booking
-Use the office booking system to reserve meeting rooms:
-
-### Available Rooms
-1. **Conference Room A** - Seats 12, has projector
-2. **Conference Room B** - Seats 8, has TV screen
-3. **Phone Booth 1** - 1-2 people, quiet calls
-4. **Phone Booth 2** - 1-2 people, quiet calls
-5. **Collaboration Space** - Open area, 6 people
-
-### How to Book
-1. Check availability on office calendar
-2. Book through Google Calendar
-3. Add room as attendee: room-a@dogpatchlabs.com
-4. Include meeting details in description
-
-### Kitchen Facilities
-- Coffee machine (free)
-- Refrigerator and microwave
-- Dishes and utensils provided
-- Please clean up after use
-
-### Office Supplies
-Located in storage room near kitchen. Contact admin@dogpatchlabs.com for restocking.
-
-## Building Access
-- Office hours: 7:00 AM - 10:00 PM
-- Weekend access: Contact security
-- Lost key card: Contact admin immediately`,
-      source: 'sample_facilities',
-      filename: 'office_facilities.md',
-      content_type: 'guide',
-      metadata: {
-        title: 'Office Facilities & Meeting Rooms',
-        category: 'Admin',
-        keywords: ['meeting room', 'booking', 'office', 'facilities', 'kitchen'],
-        confidence_score: 1.0,
-      },
-    },
-    {
-      id: 'sample-4',
-      content: `# Emergency Contacts & Procedures
-
-## Emergency Numbers
-- Fire Emergency: 999
-- Gardaí (Police): 999
-- Medical Emergency: 999
-- Building Security: +353 1 555 0199
-
-## Office Emergency Contacts
-- Office Manager: Sarah Johnson - sarah@dogpatchlabs.com - +353 86 123 4567
-- HR Manager: Michael Chen - michael@dogpatchlabs.com - +353 86 234 5678
-- IT Manager: Emma Walsh - emma@dogpatchlabs.com - +353 86 345 6789
-
-## Fire Safety
-1. **Fire Alarm**: Evacuate immediately via nearest exit
-2. **Assembly Point**: Front courtyard of building
-3. **Fire Wardens**: Sarah (Floor 1), Michael (Floor 2)
-
-## First Aid
-- First Aid Kit: Kitchen area, near coffee machine
-- Trained First Aiders: Sarah Johnson, Emma Walsh
-- Automated Defibrillator: Ground floor reception
-
-## Building Issues
-For building maintenance issues:
-- Contact building management: +353 1 555 0100
-- Emergency repairs: facilities@building.com
-- Report via office manager if urgent
-
-## Incident Reporting
-All incidents must be reported within 24 hours:
-1. Notify office manager immediately
-2. Complete incident report form
-3. Send to hr@dogpatchlabs.com`,
-      source: 'sample_emergency',
-      filename: 'emergency_procedures.md',
-      content_type: 'procedure',
-      metadata: {
-        title: 'Emergency Contacts & Procedures',
-        category: 'Admin',
-        keywords: ['emergency', 'contact', 'fire', 'safety', 'first aid'],
-        confidence_score: 1.0,
-      },
-    },
-  ];
-
-  const result = await ragEngine.ingestDocuments(sampleDocs);
-  console.log(`  ✓ Loaded ${result.documentsProcessed} sample documents`);
+    const folderInfo = config.googleDrive.targetFolderId 
+      ? `folder ID: "${config.googleDrive.targetFolderId}"`
+      : `folder: "${config.googleDrive.targetFolderName}"`;
+    console.log(`  🔍 Searching for ${folderInfo}`);
+    
+    // Ingest documents from Google Drive
+    const result = await ragEngine.ingestDocuments('google_drive');
+    
+    if (result.documentsProcessed === 0) {
+      console.log('  ⚠️  No documents found in Google Drive folder. Please ensure:');
+      console.log('     1. The target folder exists and is shared with the service account');
+      console.log('     2. The folder contains supported file types (Docs, Sheets, Slides, PDFs, etc.)');
+      console.log('     3. The service account has read access to the folder');
+      console.log('     4. The required Google APIs are enabled (Drive, Docs, Sheets, Slides)');
+    } else {
+      console.log(`  ✅ Successfully loaded ${result.documentsProcessed} documents from Google Drive`);
+    }
+    
+    return result;
+  } catch (error) {
+    console.error('  ❌ Failed to load Google Drive data:', error.message);
+    
+    // Provide helpful error messages
+    if (error.message.includes('credentials')) {
+      console.log('  💡 Make sure the Google Drive service account credentials are properly configured.');
+    } else if (error.message.includes('not found') || error.message.includes('not accessible')) {
+      console.log('  💡 Make sure the "Test Context" folder is shared with the service account email.');
+    } else if (error.message.includes('authentication') || error.message.includes('authorization')) {
+      console.log('  💡 Check that the service account has the correct permissions and scopes.');
+    }
+    
+    throw error;
+  }
 }
 
 /**
@@ -258,15 +141,25 @@ async function verifySystem(ragEngine) {
     const stats = await ragEngine.getStatistics();
     console.log(`  ✓ Vector database: ${stats.vectorDatabase.totalDocuments} documents`);
 
-    // Test knowledge gap detection
+    // Show Google Drive integration status
+    if (stats.googleDrive) {
+      if (stats.googleDrive.status === 'healthy') {
+        console.log(`  ✓ Google Drive: ${stats.googleDrive.details.files_found} files found in "${stats.googleDrive.details.target_folder_name}"`);
+        console.log(`  ✓ Supported files: ${stats.googleDrive.details.supported_files}`);
+      } else {
+        console.log(`  ⚠️  Google Drive status: ${stats.googleDrive.status} - ${stats.googleDrive.message}`);
+      }
+    }
+
+    // Test knowledge gap detection with a question that definitely won't be in business docs
     const gapResult = await ragEngine.query('How do I travel to Mars?', { includeGapDetection: true });
-    if (gapResult.knowledgeGap.hasGap) {
+    if (gapResult.knowledgeGap && gapResult.knowledgeGap.hasGap) {
       console.log('  ✓ Knowledge gap detection working');
     }
 
-    // Test regular query
-    const queryResult = await ragEngine.query('How do I request annual leave?');
-    if (queryResult.confidence > 0.7) {
+    // Test regular query with a generic business question
+    const queryResult = await ragEngine.query('What is this document about?');
+    if (queryResult.confidence > 0.3) {
       console.log('  ✓ Query processing working');
     }
 
@@ -280,17 +173,25 @@ async function verifySystem(ragEngine) {
  * Test sample queries
  */
 async function testSampleQueries(ragEngine) {
+  // Generic queries that should work with any business content
   const sampleQueries = [
-    'How do I request annual leave?',
-    'What is the WiFi password for guests?',
-    'How do I book a meeting room?',
-    'Who should I contact for IT support?',
+    'What information is available?',
+    'Can you tell me about the content?',
+    'What topics are covered?',
+    'What should I know?',
   ];
+
+  console.log('  Testing with generic business queries...');
 
   for (const query of sampleQueries) {
     try {
       const result = await ragEngine.query(query);
       console.log(`  ✓ "${query}" - Confidence: ${Math.round(result.confidence * 100)}%`);
+      
+      // Show source information for the first query to demonstrate Drive integration
+      if (query === sampleQueries[0] && result.sources && result.sources.length > 0) {
+        console.log(`    📄 Found content from: ${result.sources[0].filename}`);
+      }
     } catch (error) {
       console.log(`  ❌ "${query}" - Failed: ${error.message}`);
     }

@@ -275,7 +275,17 @@ function formatRAGResponse(result) {
   if (result.sources && result.sources.length > 0) {
     responseText += `\n\n**Sources:**`;
     result.sources.forEach((source, index) => {
-      responseText += `\n${index + 1}. ${source.filename} (${Math.round(source.similarity * 100)}% relevant)`;
+      let sourceInfo = `${source.filename} (${Math.round(source.similarity * 100)}% relevant)`;
+      
+      // Add Google Drive specific information if available
+      if (source.metadata && source.metadata.source_type === 'google_drive') {
+        sourceInfo += ` - From Google Drive`;
+        if (source.metadata.web_view_link) {
+          sourceInfo += ` [View in Drive](${source.metadata.web_view_link})`;
+        }
+      }
+      
+      responseText += `\n${index + 1}. ${sourceInfo}`;
     });
   }
 

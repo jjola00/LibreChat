@@ -3,6 +3,7 @@ const { logger } = require('@librechat/data-schemas');
 const VectorDatabase = require('./VectorDatabase');
 const DocumentProcessor = require('./DocumentProcessor');
 const KnowledgeGapDetector = require('./KnowledgeGapDetector');
+const GoogleDriveService = require('./GoogleDriveService');
 const { v4: uuidv4 } = require('uuid');
 
 /**
@@ -14,6 +15,7 @@ class RAGEngine {
     this.vectorDB = new VectorDatabase(config);
     this.documentProcessor = new DocumentProcessor(config);
     this.gapDetector = new KnowledgeGapDetector(config);
+    this.driveService = new GoogleDriveService(config);
     this.llm = null;
     this.isInitialized = false;
   }
@@ -36,6 +38,11 @@ class RAGEngine {
       // Initialize components
       await this.vectorDB.initialize();
       await this.gapDetector.initialize();
+      
+      // Initialize Google Drive service if enabled
+      if (this.config.googleDrive.enabled) {
+        await this.driveService.initialize();
+      }
 
       this.isInitialized = true;
       logger.info('RAG Engine initialized successfully');
@@ -65,16 +72,21 @@ class RAGEngine {
         // Already processed documents
         documents = source;
       } else if (typeof source === 'string') {
-        const fs = require('fs-extra');
-        const stats = await fs.stat(source);
-
-        if (stats.isDirectory()) {
-          documents = await this.documentProcessor.processDirectory(source, options);
+        if (source === 'google_drive') {
+          // Process documents from Google Drive
+          documents = await this.documentProcessor.processGoogleDriveDocuments(options);
         } else {
-          documents = await this.documentProcessor.processFile(source, options.metadata);
+          const fs = require('fs-extra');
+          const stats = await fs.stat(source);
+
+          if (stats.isDirectory()) {
+            documents = await this.documentProcessor.processDirectory(source, options);
+          } else {
+            documents = await this.documentProcessor.processFile(source, options.metadata);
+          }
         }
       } else {
-        throw new Error('Invalid source type. Must be string path or array of documents');
+        throw new Error('Invalid source type. Must be string path, "google_drive", or array of documents');
       }
 
       // Add documents to vector database
@@ -308,10 +320,27 @@ Please provide a comprehensive answer based on the context provided.`;
     try {
       const vectorStats = await this.vectorDB.getStatistics();
       const gapStats = await this.gapDetector.getStatistics();
+      
+      // Get Google Drive health check if enabled
+      let driveHealth = null;
+      if (this.config.googleDrive.enabled) {
+        try {
+          driveHealth = await this.driveService.getHealthCheck();
+        } catch (error) {
+          logger.warn('Failed to get Google Drive health check:', error.message);
+          driveHealth = {
+            enabled: true,
+            status: 'error',
+            message: 'Health check failed',
+            error: error.message,
+          };
+        }
+      }
 
       return {
         vectorDatabase: vectorStats,
         knowledgeGaps: gapStats,
+        googleDrive: driveHealth,
         lastUpdated: new Date().toISOString(),
       };
     } catch (error) {
@@ -352,6 +381,9 @@ Please provide a comprehensive answer based on the context provided.`;
     }
     if (this.gapDetector) {
       await this.gapDetector.close();
+    }
+    if (this.driveService && this.driveService.isInitialized) {
+      await this.driveService.close();
     }
     this.isInitialized = false;
     logger.info('RAG Engine closed');

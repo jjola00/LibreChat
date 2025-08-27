@@ -5,6 +5,7 @@ const mammoth = require('mammoth');
 const { RecursiveCharacterTextSplitter } = require('langchain/text_splitter');
 const { logger } = require('@librechat/data-schemas');
 const { v4: uuidv4 } = require('uuid');
+const GoogleDriveService = require('./GoogleDriveService');
 
 /**
  * Document Processor for RAG System
@@ -13,11 +14,13 @@ const { v4: uuidv4 } = require('uuid');
 class DocumentProcessor {
   constructor(config) {
     this.config = config.documentProcessing;
+    this.fullConfig = config;
     this.textSplitter = new RecursiveCharacterTextSplitter({
       chunkSize: this.config.chunkSize,
       chunkOverlap: this.config.chunkOverlap,
       separators: ['\n\n', '\n', '. ', ' ', ''],
     });
+    this.driveService = new GoogleDriveService(config);
   }
 
   /**
@@ -312,6 +315,94 @@ class DocumentProcessor {
 
     await processDir(dirPath);
     return files;
+  }
+
+  /**
+   * Process all documents from Google Drive "Test Context" folder
+   * @param {Object} options - Processing options
+   * @returns {Promise<Array>} - Array of document chunks
+   */
+  async processGoogleDriveDocuments(options = {}) {
+    try {
+      logger.info('Processing documents from Google Drive "Test Context" folder');
+
+      if (!this.fullConfig.googleDrive.enabled) {
+        throw new Error('Google Drive integration is not enabled');
+      }
+
+      // Initialize Drive service if not already done
+      if (!this.driveService.isInitialized) {
+        await this.driveService.initialize();
+      }
+
+      // Get all files from the target folder
+      const files = await this.driveService.getFilesFromTargetFolder();
+      
+      if (files.length === 0) {
+        logger.warn('No supported files found in Google Drive target folder');
+        return [];
+      }
+
+      logger.info(`Found ${files.length} files to process from Google Drive`);
+
+      const allDocuments = [];
+
+      for (const file of files) {
+        try {
+          logger.info(`Processing Google Drive file: ${file.name}`);
+
+          // Extract content from the Drive file
+          const extractedDoc = await this.driveService.extractFileContent(file);
+
+          // Clean and validate the content
+          if (!extractedDoc.content || extractedDoc.content.trim().length === 0) {
+            logger.warn(`Skipping ${file.name}: no extractable content`);
+            continue;
+          }
+
+          // Clean the text
+          const cleanedContent = this.cleanText(extractedDoc.content);
+
+          // Split into chunks
+          const chunks = await this.textSplitter.splitText(cleanedContent);
+
+          // Create document objects for each chunk
+          const documents = chunks.map((chunk, index) => ({
+            id: uuidv4(),
+            content: chunk,
+            source: 'google_drive',
+            filename: extractedDoc.filename,
+            content_type: extractedDoc.content_type,
+            chunk_index: index,
+            total_chunks: chunks.length,
+            created_at: extractedDoc.created_at,
+            updated_at: extractedDoc.updated_at,
+            metadata: {
+              ...extractedDoc.metadata,
+              original_length: cleanedContent.length,
+              chunk_length: chunk.length,
+              processed_at: new Date().toISOString(),
+              source_type: 'google_drive',
+              drive_folder: this.fullConfig.googleDrive.targetFolderName,
+            },
+          }));
+
+          allDocuments.push(...documents);
+          logger.info(`Processed ${file.name}: ${chunks.length} chunks created`);
+
+        } catch (error) {
+          logger.warn(`Failed to process Google Drive file ${file.name}:`, error.message);
+          // Continue processing other files
+        }
+      }
+
+      logger.info(`Google Drive processing complete: ${allDocuments.length} total chunks from ${files.length} files`);
+      return allDocuments;
+
+    } catch (error) {
+      logger.error('Failed to process Google Drive documents:', error);
+      throw error;
+    }
   }
 
   /**

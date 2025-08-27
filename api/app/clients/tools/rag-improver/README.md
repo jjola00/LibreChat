@@ -57,19 +57,48 @@ npm install
 docker run -d --name chroma-rag -p 8001:8000 chromadb/chroma
 ```
 
-### 2. Configuration
+### 2. Google Drive Setup
 
-The system automatically loads environment variables from LibreChat's root `.env` file. No additional configuration needed if you already have `OPENAI_API_KEY` set.
+The system loads documents from Google Drive using environment variables configured in LibreChat's `.env` file:
 
-To customize settings, modify `config.js`:
-- ChromaDB URL (default: `http://localhost:8001`)  
-- Confidence thresholds
-- Expert contact settings
-- Logging preferences
+**Required Environment Variables:**
+```bash
+# Google Drive credentials
+GOOGLE_APPLICATION_CREDENTIALS=./secrets/librechat-470216-89cbc7001a64.json
+GOOGLE_DRIVE_CREDENTIALS_PATH=./secrets/librechat-470216-89cbc7001a64.json
 
-### 3. Initial Setup
+# Target folder configuration  
+TEST_CONTEXT_FOLDER_NAME=Test Context
+TEST_CONTEXT_FOLDER_ID=16Pr0nUKX7urr6E0Z672M1bBbFmdr1Bkk
+```
+
+**Supported Files**: Google Docs, Sheets, Slides, PDFs, text files, and Office documents
+
+**Important**: 
+- Ensure the target folder is shared with the service account email
+- All required Google APIs (Drive, Docs, Sheets, Slides) must be enabled
+- Use either folder name OR folder ID (folder ID is preferred for performance)
+
+### 3. Configuration
+
+All configuration comes from environment variables in LibreChat's root `.env` file:
+
+- **Google Drive Integration**: Enabled by default
+- **Target Folder**: From `TEST_CONTEXT_FOLDER_NAME` or `TEST_CONTEXT_FOLDER_ID`
+- **ChromaDB URL**: `http://localhost:8001` 
+- **Credentials Path**: From `GOOGLE_DRIVE_CREDENTIALS_PATH` or `GOOGLE_APPLICATION_CREDENTIALS`
+- **Refresh Interval**: 24 hours
+
+### 4. Initial Setup
 
 ```bash
-# Run the setup script
+# Run the setup script to load Google Drive content
 node setup.js
 ```
+
+The setup will:
+- Connect to Google Drive
+- Find the "Test Context" folder
+- Extract content from all supported files
+- Process and embed the content
+- Load it into the vector database

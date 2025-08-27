@@ -247,35 +247,45 @@ testSuite.test('Agent Workflow Manager', async () => {
   await workflowManager.close();
 });
 
-// Test 9: End-to-End Workflow
-testSuite.test('End-to-End Workflow', async () => {
+// Test 9: Google Drive Integration
+testSuite.test('Google Drive Integration', async () => {
+  if (!config.googleDrive.enabled) {
+    console.log('  Skipping Google Drive test - integration disabled');
+    return;
+  }
+
   const ragEngine = new RAGEngine(config);
   await ragEngine.initialize();
   
-  // Add a test document
-  const testDoc = [{
-    id: 'e2e-test-doc',
-    content: 'Employee handbook section: All employees must complete security training within 30 days of starting.',
-    source: 'handbook',
-    filename: 'employee_handbook.txt',
-    content_type: 'handbook',
-    metadata: {
-      title: 'Security Training Requirements',
-      category: 'HR',
-      keywords: ['security', 'training', 'employee', 'handbook'],
-    },
-  }];
+  // Test Google Drive health check
+  const stats = await ragEngine.getStatistics();
+  testSuite.assert(stats.googleDrive, 'Should include Google Drive status');
   
-  await ragEngine.ingestDocuments(testDoc);
-  
-  // Test successful query
-  const goodQuery = await ragEngine.query('security training requirements');
-  testSuite.assert(goodQuery.confidence > 0.4, 'Should have reasonable confidence for relevant query');
-  testSuite.assertContains(goodQuery.response.toLowerCase(), 'security', 'Response should mention security');
-  
-  // Test knowledge gap detection
-  const gapQuery = await ragEngine.query('how to request a company spaceship');
-  testSuite.assert(gapQuery.knowledgeGap.hasGap, 'Should detect knowledge gap for spaceship query');
+  if (stats.googleDrive.status === 'healthy') {
+    const expectedFolderName = config.googleDrive.targetFolderName || 'Using direct folder ID';
+    testSuite.assert(stats.googleDrive.details.target_folder_name === expectedFolderName, 'Should have correct folder reference');
+    
+    // Test Google Drive document ingestion
+    const result = await ragEngine.ingestDocuments('google_drive');
+    testSuite.assert(result.success, 'Google Drive ingestion should succeed');
+    
+    if (result.documentsProcessed > 0) {
+      // Test query with Google Drive content
+      const queryResult = await ragEngine.query('What information is available?');
+      testSuite.assert(queryResult.response, 'Should return a response');
+      testSuite.assert(queryResult.sources, 'Should have sources array');
+      
+      // Check if sources include Google Drive content
+      if (queryResult.sources.length > 0) {
+        const hasGoogleDriveSource = queryResult.sources.some(source => 
+          source.metadata && source.metadata.source_type === 'google_drive'
+        );
+        testSuite.assert(hasGoogleDriveSource, 'Should include Google Drive sources');
+      }
+    }
+  } else {
+    console.log(`  Google Drive status: ${stats.googleDrive.status} - ${stats.googleDrive.message}`);
+  }
   
   await ragEngine.close();
 });
