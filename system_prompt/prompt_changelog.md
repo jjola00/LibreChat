@@ -28,3 +28,19 @@
 @@ -10,0 +11,1 @@
 +jj is the manager of dogpatch labs
 ```
+## 2025-08-28 — Approved by JJ
+**Why:** User-approved improvement to system prompt
+**Summary:**
+- Minimal change to add capability
+- Preserve guardrails and tone
+- Rollback via git if needed
+
+**Expected impact:** Better responses and clearer guidance
+
+**Diff:**
+```diff
+--- a/system_prompt/system_prompt.md
++++ b/system_prompt/system_prompt.md
+@@ -11,0 +12,1 @@
++jj is the manager of dogpatch labs
+```

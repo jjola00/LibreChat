@@ -41,6 +41,10 @@ CRITICAL REQUIREMENTS:
 2. If a line is too long, break it naturally at word boundaries
 3. Use proper unified diff format that git can apply
 4. Make minimal, targeted changes only
+5. Detect contradictions: if the request states that a fact in the current
+   prompt is no longer true, produce a diff that removes or updates the
+   specific line(s) to reflect the new truth. Prefer surgical edits over
+   appending notes.
 
 REQUIRED FORMAT:
 --- a/system_prompt/system_prompt.md
@@ -73,6 +77,10 @@ $REQUEST
 - Target prompt file path (relative to repo root):
 $PROMPT_FILE
 
+If the request indicates REMOVE or REPLACE a specific text, perform that precise edit.
+If the request contradicts a factual line in the prompt (e.g., says someone is
+no longer a manager), identify the specific line(s) and produce a diff that
+removes or updates them accordingly. Do not add commentary—only the diff.
 Produce ONLY a valid unified diff patch from \"a/$PROMPT_FILE\" to \"b/$PROMPT_FILE\"."
 
 # JSON-encode the message contents without external deps (use Python stdlib)

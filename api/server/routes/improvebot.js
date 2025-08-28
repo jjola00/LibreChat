@@ -52,6 +52,86 @@ function synthesizeAppendDiff(relativePath, textLines) {
   return header + hunk + body;
 }
 
+// Helper: build a unified diff that replaces the first line containing target with replacementLines
+function synthesizeReplaceDiff(relativePath, target, replacementLines) {
+  const fs = require('fs');
+  const fullPath = path.join(REPO_ROOT, relativePath);
+  const content = fs.readFileSync(fullPath, 'utf8');
+  const lines = content.split('\n');
+  const idx = lines.findIndex((l) => l.includes(target));
+  if (idx === -1) {
+    throw new Error('Target text not found for replacement');
+  }
+  const start = idx + 1; // 1-based
+  const header = `--- a/${relativePath}\n+++ b/${relativePath}\n`;
+  const hunk = `@@ -${start},1 +${start},${replacementLines.length} @@\n`;
+  const body = [`-${lines[idx]}`, ...replacementLines.map((l) => `+${l}`)].join('\n') + '\n';
+  return header + hunk + body;
+}
+
+// Helper: build a unified diff that removes the first line containing target
+function synthesizeRemoveDiff(relativePath, target) {
+  const fs = require('fs');
+  const fullPath = path.join(REPO_ROOT, relativePath);
+  const content = fs.readFileSync(fullPath, 'utf8');
+  const lines = content.split('\n');
+  const idx = lines.findIndex((l) => l.includes(target));
+  if (idx === -1) {
+    throw new Error('Target text not found for removal');
+  }
+  const start = idx + 1; // 1-based
+  const header = `--- a/${relativePath}\n+++ b/${relativePath}\n`;
+  const hunk = `@@ -${start},1 +${start},0 @@\n`;
+  const body = `-${lines[idx]}\n`;
+  return header + hunk + body;
+}
+
+// Heuristic: if request states X is no longer Y, remove matching factual lines
+function synthesizeHeuristicContradictionFix(relativePath, requestText) {
+  const fs = require('fs');
+  const fullPath = path.join(REPO_ROOT, relativePath);
+  const content = fs.readFileSync(fullPath, 'utf8');
+  const lines = content.split('\n');
+  const req = String(requestText || '');
+
+  // Simple patterns: "<name> is no longer <role>", "<name> is not the <role>"
+  const patterns = [
+    /(.*?)\s+is\s+no\s+longer\s+the?\s+(.*)/i,
+    /(.*?)\s+is\s+not\s+the?\s+(.*)/i,
+    /(.*?)\s+no\s+longer\s+serves\s+as\s+(.*)/i,
+  ];
+
+  let subject = null;
+  let role = null;
+  for (const p of patterns) {
+    const m = req.match(p);
+    if (m && m[1] && m[2]) {
+      subject = m[1].trim();
+      role = m[2].trim();
+      break;
+    }
+  }
+
+  if (!subject || !role) {
+    throw new Error('No clear contradiction found');
+  }
+
+  // Find a line like "<subject> is the <role>" or "<subject> is <role>"
+  const idx = lines.findIndex((l) =>
+    new RegExp(`^${subject.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\s+is(\s+the)?\s+${role.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i').test(l.trim()),
+  );
+
+  if (idx === -1) {
+    throw new Error('Contradictory line not found');
+  }
+
+  const start = idx + 1; // 1-based
+  const header = `--- a/${relativePath}\n+++ b/${relativePath}\n`;
+  const hunk = `@@ -${start},1 +${start},0 @@\n`;
+  const body = `-${lines[idx]}\n`;
+  return header + hunk + body;
+}
+
 // Apply authentication middleware (removed admin requirement for self-improvement)
 router.use(requireJwtAuth);
 router.use(checkBan);
@@ -59,7 +139,7 @@ router.use(uaParser);
 
 // Propose improvement endpoint
 router.post('/propose', async (req, res) => {
-  const { improvement_request, conversation_context } = req.body;
+  const { improvement_request, conversation_context, mode, target, replacement } = req.body;
   
   if (!improvement_request) {
     return res.status(400).json({ error: 'improvement_request is required' });
@@ -86,6 +166,12 @@ Please update the system prompt to handle this type of question better in the fu
     }
 
     const targetFile = 'system_prompt/system_prompt.md';
+    // If structured operation provided, include hints for the LLM
+    if (mode === 'remove' && target) {
+      enhancedRequest += `\n\nOperation: REMOVE\nTarget: ${target}`;
+    } else if (mode === 'replace' && target && replacement) {
+      enhancedRequest += `\n\nOperation: REPLACE\nTarget: ${target}\nReplacement: ${replacement}`;
+    }
     const command = `cd ${REPO_ROOT} && PROMPT_FILE=${targetFile} improvebot/propose.sh "${enhancedRequest.replace(/"/g, '\\"')}"`;
     
     exec(command, { timeout: 60000 }, (error, stdout, stderr) => {
@@ -101,10 +187,25 @@ Please update the system prompt to handle this type of question better in the fu
         });
       }
 
-      // Fallback: synthesize a minimal valid diff appending the improvement to the end
+      // Fallback: synthesize a minimal valid diff based on requested mode or contradiction heuristic
       try {
-        const wrapped = wrapText(enhancedRequest, 78);
-        const diff = synthesizeAppendDiff(targetFile, wrapped);
+        let diff;
+        if (mode === 'remove' && target) {
+          diff = synthesizeRemoveDiff(targetFile, target);
+        } else if (mode === 'replace' && target && replacement) {
+          const wrappedRepl = replacement
+            .split('\n')
+            .flatMap((ln) => wrapText(ln, 78));
+          diff = synthesizeReplaceDiff(targetFile, target, wrappedRepl);
+        } else {
+          // Try contradiction heuristic first
+          try {
+            diff = synthesizeHeuristicContradictionFix(targetFile, enhancedRequest);
+          } catch (_) {
+            const wrapped = wrapText(enhancedRequest, 78);
+            diff = synthesizeAppendDiff(targetFile, wrapped);
+          }
+        }
         console.warn('[Improvebot] Falling back to synthesized diff. Reason:', details || (error ? 'child process error' : 'invalid diff'));
         return res.json({ success: true, diff, message: 'Synthesized diff (LLM fallback)' });
       } catch (fallbackErr) {
@@ -154,10 +255,14 @@ router.post('/apply', async (req, res) => {
     const tmpFile = `/tmp/improvebot_${Date.now()}.diff`;
     fs.writeFileSync(tmpFile, cleanDiff);
 
+    // Derive approver from authenticated user if not provided
+    const autoApprover =
+      approver || req.user?.name || req.user?.email || `User ${req.user?.id || ''}`.trim();
+
     const env = {
       ...process.env,
       ALLOWED_PROMPT_FILE: 'system_prompt/system_prompt.md',
-      APPROVER: approver || 'LibreChat Admin',
+      APPROVER: autoApprover || 'LibreChat Admin',
       WHY: why || 'User-approved system improvement',
       IMPACT: impact || 'Enhanced capabilities'
     };
