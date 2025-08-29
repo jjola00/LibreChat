@@ -362,12 +362,6 @@ router.post('/re-answer', async (req, res) => {
     
     // This is a simple implementation - in a real system you'd call your LLM
     // For now, we'll return a test response indicating the improvement worked
-    const testResponse = `Based on the updated system prompt, here's my improved response:
-
-Previous response indicated knowledge gap for: "${question}"
-
-With the improved knowledge base, I can now provide better guidance. The system has been enhanced to handle this type of question more effectively.
-
 [This is a test response - in production, this would call your LLM with the updated system prompt]`;
 
     res.json({
@@ -381,5 +375,12 @@ With the improved knowledge base, I can now provide better guidance. The system 
     res.status(500).json({ error: 'Failed to generate improved response', details: error.message });
   }
 });
-
+    res.status(500).json({ error: "Failed to generate improved response", details: error.message });
 module.exports = router;
+    const testResponse = `Based on the updated system prompt, here's my improved response:
+
+Previous response indicated knowledge gap for: "${question}"
+
+With the improved knowledge base, I can now provide better guidance. The system has been enhanced to handle this type of question more effectively.
+
+[This is a test response - in production, this would call your LLM with the updated system prompt]`;

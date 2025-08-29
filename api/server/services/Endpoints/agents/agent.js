@@ -177,6 +177,29 @@ const initializeAgent = async ({
     });
   }
 
+  // Inject system_prompt.md content for MiniPatch agent
+  if (agent.name === 'MiniPatch' || agent.name === 'MiniPatch v1') {
+    try {
+      const fs = require('fs');
+      const path = require('path');
+      const systemPromptPath = path.join(process.cwd(), 'system_prompt/system_prompt.md');
+      
+      if (fs.existsSync(systemPromptPath)) {
+        const systemPromptContent = fs.readFileSync(systemPromptPath, 'utf8');
+        const existingInstructions = agent.instructions || '';
+        
+        // Combine existing instructions with system prompt content
+        agent.instructions = `${existingInstructions}\n\n${systemPromptContent}`;
+        
+        console.log('[Agent] Injected system_prompt.md content into MiniPatch agent instructions');
+      } else {
+        console.warn('[Agent] system_prompt.md not found for MiniPatch agent');
+      }
+    } catch (error) {
+      console.error('[Agent] Error injecting system_prompt.md into MiniPatch agent:', error);
+    }
+  }
+
   if (typeof agent.artifacts === 'string' && agent.artifacts !== '') {
     agent.additional_instructions = generateArtifactsPrompt({
       endpoint: agent.provider,
